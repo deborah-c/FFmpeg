@@ -43,18 +43,32 @@ int ff_mpeg4_find_frame_end(ParseContext *pc, const uint8_t *buf, int buf_size)
     state     = pc->state;
 
     i = 0;
-    if (!vop_found) {
+    if (vop_found < 0) {
         for (i = 0; i < buf_size; i++) {
             state = (state << 8) | buf[i];
-            if (state == 0x1B6) {
+            if (state >= 0x100 && state <= 0x12f) {
                 i++;
-                vop_found = 1;
+                vop_found = 0;
                 break;
             }
         }
     }
 
-    if (vop_found) {
+    if (vop_found == 0)
+        vop_found = 1;
+
+    if (vop_found == 1) {
+        for (i = 0; i < buf_size; i++) {
+            state = (state << 8) | buf[i];
+            if (state == 0x1B6) {
+                i++;
+                vop_found = 2;
+                break;
+            }
+        }
+    }
+
+    if (vop_found == 2) {
         /* EOF considered as end of frame */
         if (buf_size == 0)
             return 0;
@@ -133,12 +147,16 @@ static int mpeg4video_parse(AVCodecParserContext *s,
     ParseContext *pc = s->priv_data;
     int next;
 
+    if (pc->frame_start_found == 0 && !avctx->extradata)
+        pc->frame_start_found = -1;
+
     if (s->flags & PARSER_FLAG_COMPLETE_FRAMES) {
         next = buf_size;
     } else {
         next = ff_mpeg4_find_frame_end(pc, buf, buf_size);
 
-        if (ff_combine_frame(pc, next, &buf, &buf_size) < 0) {
+        if (pc->frame_start_found < 0 ||
+            ff_combine_frame(pc, next, &buf, &buf_size) < 0) {
             *poutbuf      = NULL;
             *poutbuf_size = 0;
             return buf_size;
