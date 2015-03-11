@@ -292,6 +292,13 @@ int ff_h264_decode_ref_pic_list_reordering(H264Context *h)
                     }
                     break;
                 }
+                case 4: case 5:
+                    /* MVC other views. This is just sufficient to proceed,
+                     * albeit with a bad reference
+                     */
+                    (void)get_ue_golomb(&h->gb);
+                    i = -2;
+                    break;
                 default:
                     av_log(h->avctx, AV_LOG_ERROR,
                            "illegal modification_of_pic_nums_idc %u\n",
@@ -300,8 +307,9 @@ int ff_h264_decode_ref_pic_list_reordering(H264Context *h)
                 }
 
                 if (i < 0) {
-                    av_log(h->avctx, AV_LOG_ERROR,
-                           "reference picture missing during reorder\n");
+                    if (i == -1)
+                        av_log(h->avctx, AV_LOG_ERROR,
+                               "reference picture missing during reorder\n");
                     memset(&h->ref_list[list][index], 0, sizeof(H264Picture)); // FIXME
                 } else {
                     for (i = index; i + 1 < h->ref_count[list]; i++) {

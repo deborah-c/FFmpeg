@@ -1524,6 +1524,27 @@ again:
             err = 0;
 
             switch (hx->nal_unit_type) {
+            case 0x14: /* slice extension */
+                if (bit_length < 24)
+                {
+                    av_log(h->avctx, AV_LOG_ERROR,
+                           "Invalid nal_unit_header_mvc_extension\n");
+                    ret = -1;
+                    goto end;
+                }
+                else
+                {
+                    unsigned int non_idr = ptr[0] & 0x40;
+                    ptr += 3;
+                    bit_length -= 24; /* we can have P in a dependent-view IDR */
+                    if (non_idr)
+                    {
+                        hx->nal_unit_type = NAL_SLICE;
+                        goto non_idr_slice;
+                    }
+                    hx->nal_unit_type = NAL_IDR_SLICE;
+                    goto idr_slice; /* we can have P in a dependent-view IDR */
+                }
             case NAL_IDR_SLICE:
                 if ((ptr[0] & 0xFC) == 0x98) {
                     av_log(h->avctx, AV_LOG_ERROR, "Invalid inter IDR frame\n");
@@ -1531,6 +1552,7 @@ again:
                     ret = -1;
                     goto end;
                 }
+            idr_slice:
                 if (h->nal_unit_type != NAL_IDR_SLICE) {
                     av_log(h->avctx, AV_LOG_ERROR,
                            "Invalid mix of idr and non-idr slices\n");
@@ -1542,6 +1564,7 @@ again:
                 idr_cleared = 1;
                 h->has_recovery_point = 1;
             case NAL_SLICE:
+            non_idr_slice:
                 init_get_bits(&hx->gb, ptr, bit_length);
                 hx->intra_gb_ptr      =
                 hx->inter_gb_ptr      = &hx->gb;
@@ -1628,6 +1651,7 @@ again:
                     goto end;
                 break;
             case NAL_SPS:
+            case 0x0f: /* SSPS */
                 init_get_bits(&h->gb, ptr, bit_length);
                 if (ff_h264_decode_seq_parameter_set(h) < 0 && (h->is_avc ? nalsize : 1)) {
                     av_log(h->avctx, AV_LOG_DEBUG,
